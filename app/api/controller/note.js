@@ -60,9 +60,18 @@ class Note extends Base
         const note = await this.$db.table('note').where({id: data.id}).find();
         if(!note) return this.$error('笔记不存在');
 
+        // 乐观锁：请求携带客户端加载数据时的 update_time，与数据库当前值不一致，
+        // 说明其他地方（另一窗口/设备/外部 API）已编辑保存过，拒绝本次保存防止覆盖。
+        // 未携带 update_time 的调用（旧客户端、外部 API 局部更新）不校验，保持兼容。
+        if(data.update_time !== undefined && data.update_time !== null
+            && Number(note.update_time) !== Number(data.update_time)) {
+            return this.$error('保存失败：该笔记已在其他地方被修改，请先备份本地内容，重新获取数据后再编辑保存', {conflict: true, update_time: note.update_time});
+        }
+
         const result = await this.$model.note.saveNote(data);
         if(result) {
-            this.$success('保存成功');
+            // 返回新的 update_time，前端刷新本地乐观锁基准（否则连续保存会自我冲突）
+            this.$success('保存成功', {update_time: result});
         } else {
             this.$error('保存失败');
         }
@@ -119,9 +128,10 @@ class Note extends Base
         if(!id) return this.$error('缺少id参数');
 
         try {
+            // 仅改置顶标记，不更新 update_time：避免纯置顶操作让其他端
+            // 正在编辑的笔记产生虚假的乐观锁冲突
             await this.$db.table('note').where({id}).update({
-                is_pinned: isPinned ? 1 : 0,
-                update_time: Math.floor(Date.now() / 1000)
+                is_pinned: isPinned ? 1 : 0
             });
             this.$success(isPinned ? '已置顶' : '已取消置顶');
         } catch(e) {

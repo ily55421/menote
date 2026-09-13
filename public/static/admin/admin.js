@@ -349,13 +349,18 @@ const store = reactive({
             cate_id: note.cate_id,
             content: note.content,
             keywords: note.keywords,
-            is_pinned: note.is_pinned
+            is_pinned: note.is_pinned,
+            update_time: note.update_time
         };
         try {
             const res = await api.updateNote(noteData);
             if(res.state === 1) {
                 this.unsavedDialogVisible = false;
                 this.unsavedTabId = null;
+                // 刷新乐观锁基准
+                if(res.data && res.data.update_time) {
+                    note.update_time = res.data.update_time;
+                }
                 const tab = this.tabs.find(t => t.id === id);
                 if(tab) {
                     tab.title = note.title;
@@ -364,6 +369,10 @@ const store = reactive({
                 this.loadNotes(this.currentCateId);
                 ElementPlus.ElMessage.success('已保存并关闭');
                 this.closeTab(id, true);
+            } else if(res.data && res.data.conflict) {
+                // 冲突：关闭未保存弹窗，弹出冲突引导弹窗
+                this.unsavedDialogVisible = false;
+                this.showConflictDialog(id);
             } else {
                 ElementPlus.ElMessage.error(res.msg);
             }
@@ -372,6 +381,54 @@ const store = reactive({
         }
     },
     
+    // ---- 笔记编辑冲突（乐观锁）----
+    // 保存时服务端发现 update_time 与客户端基准不一致（他端已保存过），
+    // 弹窗让用户选择：备份本地内容 / 放弃本地修改并重新获取
+    conflictDialogVisible: false,
+    conflictTabId: null,
+    showConflictDialog(id) {
+        this.conflictTabId = id;
+        this.conflictDialogVisible = true;
+    },
+    // 关闭冲突弹窗（留在当前页，用户自行备份内容后再操作）
+    closeConflictDialog() {
+        this.conflictDialogVisible = false;
+    },
+    // 放弃本地修改，重新拉取服务端最新数据并刷新编辑器
+    async reloadAfterConflict() {
+        const id = this.conflictTabId;
+        this.conflictDialogVisible = false;
+        this.conflictTabId = null;
+        if(id === null) return;
+
+        // 不清缓存再加载（delete 会让 v-if="note" 短暂为 false，编辑器 DOM 被销毁，
+        // Vditor 实例失联——直接整体替换 notesCache[id]，视图始终有数据）
+        try {
+            const data = await request(`/api/note/detail?id=${id}`);
+            if(data.state !== 1) {
+                ElementPlus.ElMessage.error('重新获取失败，请重试');
+                return;
+            }
+            const fresh = data.data;
+            // 与 loadNote 一致：cate_id 0 转 null，避免 el-select 显示 0
+            if(fresh.cate_id === 0) {
+                fresh.cate_id = null;
+            }
+            this.notesCache[id] = fresh;
+
+            const tab = this.tabs.find(t => t.id === id);
+            if(tab) {
+                tab.title = fresh.title;
+                tab.modified = false;
+            }
+            this.loadNotes(this.currentCateId);
+            ElementPlus.ElMessage.success('已重新获取最新内容');
+        } catch(e) {
+            console.error('重新获取笔记失败', e);
+            ElementPlus.ElMessage.error('重新获取失败，请重试');
+        }
+    },
+
     // 标记 Tab 已修改
     markModified(id) {
         const tab = this.tabs.find(t => t.id === id);
@@ -1210,9 +1267,12 @@ const NoteList = {
                     if(res.state === 1) {
                         note.title = value;
                         ElementPlus.ElMessage.success('重命名成功');
-                        // 更新缓存和 Tab
+                        // 更新缓存和 Tab（含乐观锁基准，防止打开编辑器后保存自我冲突）
                         if(store.notesCache[note.id]) {
                             store.notesCache[note.id].title = value;
+                            if(res.data && res.data.update_time) {
+                                store.notesCache[note.id].update_time = res.data.update_time;
+                            }
                         }
                         const tab = store.tabs.find(t => t.id === note.id);
                         if(tab) {
@@ -1543,14 +1603,22 @@ const NoteEditor = {
             }
         });
 
-        // note 异步加载到达后再初始化 Vditor（容器此时才存在）
+        // note 异步加载到达后再初始化 Vditor（容器此时才存在）；
+        // 对象被整体替换（编辑冲突后"重新获取"）时，同步编辑器显示最新内容
         watch(note, (val) => {
-            if(val && !vditorInstance) {
+            if(!val) return;
+            if(!vditorInstance) {
                 nextTick(() => {
                     if(!vditorInstance) {
                         initVditor();
                     }
                 });
+                return;
+            }
+            const latest = val.content || '';
+            // 内容有差异才重设（切换 Tab 时与 activeTabId 的 watch 重复触发，此守卫保证幂等）
+            if(vditorInstance.getValue() !== latest) {
+                vditorInstance.setValue(latest);
             }
         });
 
@@ -1673,8 +1741,31 @@ const Workspace = {
                 <div class="unsaved-tip">笔记「{{ store.unsavedNoteTitle }}」有未保存的修改，是否保存？</div>
                 <template #footer>
                     <el-button @click="store.cancelUnsavedClose()">取消</el-button>
-                    <el-button @click="store.discardUnsavedClose()">放弃</el-button>
+                    <el-button @click="store.discardUnsavedClose()">放弃</el>
                     <el-button type="primary" @click="store.saveUnsavedClose()">保存</el-button>
+                </template>
+            </el-dialog>
+
+            <!-- 编辑冲突弹窗（保存时检测到他端已修改） -->
+            <el-dialog
+                v-model="store.conflictDialogVisible"
+                title="保存失败：笔记已在其他地方被修改"
+                width="420px"
+                append-to-body
+                :close-on-click-modal="false"
+                @close="store.conflictTabId = null"
+            >
+                <div class="conflict-tip">
+                    <p>该笔记已在其他窗口、设备或外部程序中被编辑并保存过。</p>
+                    <p>为避免覆盖别人的修改，本次保存已被取消。建议：</p>
+                    <ol>
+                        <li>如需保留本地修改，请先<b>全选复制</b>编辑器内容自行备份；</li>
+                        <li>点击「<b>重新获取</b>」拉取最新数据后，再粘贴回来编辑保存。</li>
+                    </ol>
+                </div>
+                <template #footer>
+                    <el-button @click="store.closeConflictDialog()">留在本页（自行备份）</el-button>
+                    <el-button type="primary" @click="store.reloadAfterConflict()">重新获取最新内容</el-button>
                 </template>
             </el-dialog>
         </div>
@@ -1722,19 +1813,24 @@ const Workspace = {
             // 强制从编辑器拉取最新内容（input 事件可能未触发完，防"保存成功但内容没变"）
             store.syncEditorContent();
 
-            // 过滤掉虚拟字段（来自 JOIN 查询）
+            // 过滤掉虚拟字段（来自 JOIN 查询），update_time 为乐观锁基准（加载数据时的版本）
             const noteData = {
                 id: store.currentNote.id,
                 title: store.currentNote.title,
                 cate_id: store.currentNote.cate_id,
                 content: store.currentNote.content,
                 keywords: store.currentNote.keywords,
-                is_pinned: store.currentNote.is_pinned
+                is_pinned: store.currentNote.is_pinned,
+                update_time: store.currentNote.update_time
             };
 
             const res = await api.updateNote(noteData);
             if(res.state === 1) {
                 ElementPlus.ElMessage.success('保存成功');
+                // 刷新乐观锁基准，否则连续保存第二次会自我冲突
+                if(res.data && res.data.update_time) {
+                    store.currentNote.update_time = res.data.update_time;
+                }
                 // 更新 Tab 标题
                 const tab = store.tabs.find(t => t.id === store.currentNote.id);
                 if(tab) {
@@ -1742,6 +1838,9 @@ const Workspace = {
                     tab.modified = false;
                 }
                 store.loadNotes(store.currentCateId);
+            } else if(res.data && res.data.conflict) {
+                // 他端已保存过：弹窗引导用户备份本地内容后重新获取数据
+                store.showConflictDialog(store.currentNote.id);
             } else {
                 ElementPlus.ElMessage.error(res.msg);
             }

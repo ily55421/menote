@@ -55,9 +55,14 @@ class Note extends Model {
      * 保存笔记（新增或更新），同时解析双向链接
      */
     async saveNote(data) {
-        // 处理未分类情况：cate_id 为 null/undefined 时设为 0
-        if(data.cate_id === null || data.cate_id === undefined) {
+        // 分类处理：
+        // - null（前端清除分类）→ 存 0（未分类）
+        // - undefined（局部更新，如重命名只传 {id, title}）→ 删除该字段，
+        //   保留数据库原值，避免误把分类重置为未分类
+        if(data.cate_id === null) {
             data.cate_id = 0;
+        } else if(data.cate_id === undefined) {
+            delete data.cate_id;
         }
 
         if(data.id) {
@@ -65,7 +70,8 @@ class Note extends Model {
             data.update_time = Math.floor(Date.now() / 1000);
             await this.db.where({id: data.id}).update(data);
             await this.parseLinks(data.id, data.content || '');
-            return true;
+            // 返回新版本时间，供调用方刷新乐观锁基准
+            return data.update_time;
         } else {
             // 创建笔记
             data.add_time = Math.floor(Date.now() / 1000);
