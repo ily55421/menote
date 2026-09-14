@@ -1,0 +1,22 @@
+# docker/Dockerfile.dockerignore —— 专属于本 Dockerfile 的排除规则（BuildKit 认可的两处之一：
+# ① context 根的裸 .dockerignore；② 与 Dockerfile 同目录、以 Dockerfile 名为前缀的本文件——②优先级更高）
+# pushme-server 的 docker/.dockerignore（子目录裸名）BuildKit 不读，别用那种写法
+# ⚠ 安全：data/（真实数据库、P2P 私钥、配对白名单）和 public/upload/（用户上传文件）
+#   绝不能进镜像——镜像会公开发布到 Docker Hub
+/data
+/public/upload
+/node_modules
+/.git
+/.github
+/.gitignore
+/.dockerignore
+/android
+/scripts
+/test-data.js
+# Dockerfile/Run.sh 自身不排除：被排除的文件不进构建上下文，COPY 必失败；
+# 镜像里带一份无害（无敏感内容）
+# 安装锁：镜像里必须不存在，否则新用户无法进入安装向导（/install）
+# （容器内首次启动由 Run.sh 依据持久卷里的 DB 状态自行恢复，见 docker/Run.sh）
+/config/lock.js
+*.log
+*.tmp.cjs
