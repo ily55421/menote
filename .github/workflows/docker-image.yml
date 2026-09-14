@@ -10,7 +10,17 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux/amd64
+          # 原生 arm64 runner：QEMU 模拟下 Node/npm 的 V8 JIT 会踩未实现指令
+          # 直接 SIGILL 崩溃（signal 4），无法在模拟环境里 npm ci
+          - os: ubuntu-24.04-arm
+            platform: linux/arm64
 
     steps:
       - name: Checkout
@@ -37,22 +47,87 @@ jobs:
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=semver,pattern={{version}}
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 单平台构建推到临时 tag（带架构后缀），最后 merge 清单合并成多平台 tag
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ github.repository }},push-by-digest=true,name-canonical=true,push=true
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.os }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    runs-on: ubuntu-24.04
+    needs: build
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ github.repository }}
+          flavor: |
+            latest=false
+          tags: |
+            type=schedule,pattern=nightly
+            type=ref,event=pr
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=semver,pattern={{version}}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build the Docker image
-        uses: docker/build-push-action@v6
-        with:
-          # iroh/sqlite3 均提供 musl x64/arm64 官方预编译包；
-          # 32 位 arm 无 prebuild 需全量本地编译，暂不支持
-          platforms: linux/amd64,linux/arm64
-          context: .
-          file: ./docker/Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Create manifest list and push
+        working-directory: /tmp/digests
+        run: |
+          # meta.outputs.tags 可能多行（tag 推送时 v1.0.0 + latest），
+          # imagetools create 的 --tag 一次一个，循环构造参数
+          tag_args=""
+          for tag in ${{ steps.meta.outputs.tags }}; do
+            tag_args="$tag_args --tag $tag"
+          done
+          echo "docker buildx imagetools create $(printf '${{ github.repository }}@sha256:%s ' *) $tag_args"
+          docker buildx imagetools create \
+            $(printf '${{ github.repository }}@sha256:%s ' *) \
+            $tag_args
+
+      - name: Inspect image
+        run: |
+          first_tag=$(echo "${{ steps.meta.outputs.tags }}" | head -n 1)
+          docker buildx imagetools inspect "${{ github.repository }}:${first_tag#${{ github.repository }}:}" 2>/dev/null \
+            || docker buildx imagetools inspect "$first_tag"
