@@ -1,0 +1,17 @@
+{
+  "docker-project": {
+    "projects": [
+      {
+        "name": "menote",
+        "path": "docker"
+      }
+    ]
+  },
+  "data-share": {
+    "shares": [
+      {
+        "name": "menote"
+      }
+    ]
+  }
+}

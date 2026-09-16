@@ -1,0 +1,12 @@
+appname=menote
+version=1.0.0
+display_name=MeNote
+desc=MeNote，一个轻量级个人笔记知识库系统，支持 Markdown 笔记、分类管理、双向链接、知识图谱。内置 P2P 隧道，手机 App 无需公网 IP 即可直连 NAS 上的笔记服务。数据本地存储，隐私自主可控。
+platform=all
+source=thirdparty
+maintainer=yafoo
+maintainer_url=https://github.com/yafoo/menote
+distributor=yafoo
+distributor_url=https://github.com/yafoo
+desktop_uidir=ui
+desktop_applaunchname=menote.main

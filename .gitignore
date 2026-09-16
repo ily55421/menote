@@ -7,3 +7,4 @@ data/p2p-key.bin
 data/p2p-allow.json
 config/lock.js
 public/upload
+fpk/menote.fpk
