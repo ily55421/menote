@@ -7,7 +7,7 @@ class Upload extends Base
         if(!this.$request.isPost()) return this.$error('请使用POST请求');
 
         // 框架 $upload.save() 内部自动生成 YYYY/mmdd/ 子目录和 md5 文件名
-        const uploadDir = join(this.$config.app.static_dir, 'upload');
+        const uploadDir = join(this.$config.app.static_dir.static_dir, 'upload');
         const result = await this.$upload.file('file').validate({size: 10 * 1024 * 1024}).save(uploadDir);
 
         if(typeof result === 'object') {
