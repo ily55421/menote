@@ -1,3 +1,7 @@
+/**
+ * @module app
+ * @type {import('jj.js/types').RouteConfig}
+ */
 const routes = [
     // 前台（SSR）
     {url: '/', path: 'app/index/index'},
@@ -13,6 +17,9 @@ const routes = [
     // 安装向导
     {url: '/install', path: 'install/index/index'},
     {url: '/install/install', path: 'install/index/install'},
+
+    // 笔记资源
+    {url: '/upload/{*notefile}', path: '/auth/notefile', type: 'middleware'},
 ];
 
 module.exports = routes;
