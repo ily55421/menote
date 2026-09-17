@@ -3,11 +3,12 @@
  * @type {import('jj.js/types').AppConfig}
  */
 const app = {
-    app_debug: true, //调试模式
+    app_debug: process.env.NODE_ENV === 'development' ? true : false, //调试模式
     default_deep: 'app', //默认应用深度
     static_dir: {
         static_dir: './public', //静态文件目录，相对于应用根目录，为空或false时，关闭静态访问
         options: {
+            defer: true,
             maxage: 10 * 24 * 60 * 60 * 1000, //静态文件缓存时间，单位毫秒
         }
     },

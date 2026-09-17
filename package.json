@@ -4,10 +4,8 @@
   "description": "轻量级个人知识库系统",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js",
-    "assets": "node scripts/copy-assets.js",
-    "setup": "npm install && npm run assets"
+    "start": "cross-env NODE_ENV=production node server.js",
+    "dev": "cross-env NODE_ENV=development node server.js"
   },
   "keywords": [
     "knowledge-base",
@@ -24,6 +22,7 @@
   },
   "devDependencies": {
     "@element-plus/icons-vue": "^2.3.2",
+    "cross-env": "^10.1.0",
     "element-plus": "^2.14.5",
     "sortablejs": "^1.15.7",
     "vditor": "^4.0.0",
