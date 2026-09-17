@@ -30,13 +30,9 @@ class Base extends Controller
 
     async _init() {
         // 先检查 Cookie 认证（管理后台）：不受 token 权限限制，拥有全部权限
-        const userId = this.$cookie.get('user');
-        if(userId) {
-            const user = await this.$db.table('user').where({id: userId}).find();
-            if(user) {
-                this.userInfo = user;
-                return; // Cookie 认证成功，跳过 token 认证
-            }
+        this.userInfo = await this.$model.user.is_login();
+        if(this.userInfo) {
+            return; // Cookie 认证成功，跳过 token 认证
         }
 
         // 再检查 Token 认证（外部 API）

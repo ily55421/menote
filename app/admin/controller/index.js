@@ -3,7 +3,7 @@ const {Controller} = require('jj.js');
 class Index extends Controller
 {
     async _init() {
-        if(!this.$cookie.get('user')) {
+        if(!await this.$model.user.is_login()) {
             return this.$redirect('login/index');
         }
     }

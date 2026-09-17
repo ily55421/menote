@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS `menote_user` (
   `salt` VARCHAR(20) NOT NULL DEFAULT '',
   `add_time` INTEGER NOT NULL DEFAULT 0,
   `login_time` INTEGER NOT NULL DEFAULT 0,
-  `is_lock` INTEGER NOT NULL DEFAULT 0
+  `is_lock` INTEGER NOT NULL DEFAULT -5
 );
 
 -- API Token 表

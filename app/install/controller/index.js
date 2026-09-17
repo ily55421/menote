@@ -2,7 +2,6 @@ const {Controller, loader} = require('jj.js');
 const {version: VERSION} = require('../../../package.json');
 const {readFile, writeFile} = require('fs').promises;
 const {join} = require('path');
-const crypto = require('crypto');
 
 class Index extends Controller
 {
@@ -71,15 +70,8 @@ class Index extends Controller
                 if(s) await db.query(s);
             }
 
-            // 创建管理员用户
-            const salt = crypto.randomBytes(8).toString('hex');
-            const pwd = crypto.createHash('md5').update(password + salt).digest('hex');
-            await db.table('user').insert({
-                username: username,
-                password: pwd,
-                salt: salt,
-                add_time: Math.floor(Date.now() / 1000)
-            });
+            // 创建管理员用户（复用 user 模型统一密码算法）
+            await this.$model.user.saveUser({username, password});
 
             // 插入默认站点配置
             const siteData = [
