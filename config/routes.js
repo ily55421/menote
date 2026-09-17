@@ -18,6 +18,10 @@ const routes = [
     {url: '/install', path: 'install/index/index'},
     {url: '/install/install', path: 'install/index/install'},
 
+    // 静态资源
+    {url: '/static/{*staticfile}', path: async()=>{}},
+    {url: '/logo.png', path: async()=>{}},
+    {url: '/favicon.ico', path: async()=>{}},
     // 笔记资源
     {url: '/upload/{*notefile}', path: '/auth/notefile', type: 'middleware'},
 ];
