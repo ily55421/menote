@@ -116,9 +116,11 @@ jobs:
         working-directory: /tmp/digests
         run: |
           # meta.outputs.tags 可能多行（tag 推送时 v1.0.0 + latest），
-          # imagetools create 的 --tag 一次一个，循环构造参数
+          # imagetools create 的 --tag 一次一个，逐行读取构造参数
+          mapfile -t tags < <(echo "${{ steps.meta.outputs.tags }}")
           tag_args=""
-          for tag in ${{ steps.meta.outputs.tags }}; do
+          for tag in "${tags[@]}"; do
+            [ -z "$tag" ] && continue
             tag_args="$tag_args --tag $tag"
           done
           echo "docker buildx imagetools create $(printf '${{ github.repository }}@sha256:%s ' *) $tag_args"
