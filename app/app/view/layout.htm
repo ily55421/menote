@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{title}} - {{site.sitename}}</title>
     <link rel="icon" href="/favicon.ico">
-    <link rel="stylesheet" href="/static/app/style.css?v=20260917a">
+    <link rel="stylesheet" href="/static/app/style.css?v=20260918a">
     {{block 'head'}}{{/block}}
 </head>
 <body>
@@ -17,7 +17,7 @@
                 {{each cates cate}}
                 <a href="/cate/{{cate.id}}">{{cate.icon}} {{cate.name}}</a>
                 {{/each}}
-                <a href="/graph">图谱</a>
+                <a href="/graph">🕸️ 图谱</a>
             </nav>
             <form class="search-form" action="/search">
                 <input type="text" name="q" placeholder="搜索...">
@@ -32,7 +32,7 @@
         
         <!-- 底部 -->
         <footer class="footer">
-            <p>Powered by MeNote</p>
+            <p>Powered by <a href="https://github.com/yafoo/menote" target="_blank" rel="noopener">MeNote</a></p>
         </footer>
     </div>
 </body>

@@ -57,6 +57,7 @@ body {
     color: #666;
     text-decoration: none;
     font-size: 14px;
+    transition: color 0.2s;
 }
 
 .header .nav a:hover {
@@ -68,6 +69,11 @@ body {
     border: 1px solid #ddd;
     border-radius: 4px;
     overflow: hidden;
+    transition: border-color 0.2s;
+}
+
+.header .search-form:focus-within {
+    border-color: #409eff;
 }
 
 .header .search-form input {
@@ -83,13 +89,42 @@ body {
     background: #f5f5f5;
     border: none;
     cursor: pointer;
+    transition: background 0.2s;
+}
+
+.header .search-form button:hover {
+    background: #e8e8e8;
+}
+
+/* 页面标题 */
+.page-home h2,
+.cate-header h1 {
+    font-size: 18px;
+    font-weight: 500;
+    color: #666;
+    margin-bottom: 20px;
+}
+
+/* 分类页头部 */
+.cate-header {
+    background: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    margin-bottom: 20px;
+}
+
+.cate-desc {
+    font-size: 13px;
+    color: #999;
+    margin-top: 4px;
 }
 
 /* 笔记列表 */
 .note-list {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 16px;
 }
 
 .note-item {
@@ -97,16 +132,24 @@ body {
     padding: 20px;
     border-radius: 8px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    transition: box-shadow 0.2s, transform 0.15s;
+}
+
+.note-item:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    transform: translateY(-1px);
 }
 
 .note-item h3 {
-    font-size: 18px;
-    margin-bottom: 8px;
+    font-size: 17px;
+    margin-bottom: 10px;
+    line-height: 1.4;
 }
 
 .note-item h3 a {
     color: #333;
     text-decoration: none;
+    transition: color 0.2s;
 }
 
 .note-item h3 a:hover {
@@ -118,11 +161,13 @@ body {
     gap: 16px;
     font-size: 13px;
     color: #999;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
 }
 
 .note-meta .cate {
     color: #409eff;
+    font-weight: 500;
 }
 
 .tags {
@@ -134,15 +179,22 @@ body {
 .tag {
     background: #f0f9ff;
     color: #409eff;
-    padding: 2px 8px;
-    border-radius: 3px;
+    padding: 2px 10px;
+    border-radius: 12px;
     font-size: 12px;
+    transition: background 0.2s;
+}
+
+.tag:hover {
+    background: #e0f2fe;
 }
 
 .empty {
     text-align: center;
     color: #999;
     padding: 40px;
+    background: #fff;
+    border-radius: 8px;
 }
 
 /* 笔记详情 */
@@ -207,31 +259,46 @@ body {
     font-size: 13px;
 }
 
+.footer a {
+    color: #409eff;
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+.footer a:hover {
+    color: #66b1ff;
+    text-decoration: underline;
+}
+
 /* 响应式 */
 @media (max-width: 768px) {
     .header {
         flex-direction: column;
         align-items: flex-start;
     }
-    
+
     .header .nav {
         flex-wrap: wrap;
     }
-    
+
     .header .search-form {
         width: 100%;
     }
-    
+
     .header .search-form input {
         flex: 1;
         width: auto;
     }
-    
+
     .page-note {
         padding: 20px;
     }
-    
+
     .note-header h1 {
         font-size: 22px;
+    }
+
+    .note-item {
+        padding: 16px;
     }
 }
