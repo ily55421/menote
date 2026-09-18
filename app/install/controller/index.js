@@ -70,17 +70,25 @@ class Index extends Controller
                 if(s) await db.query(s);
             }
 
-            // 创建管理员用户（复用 user 模型统一密码算法）
-            await this.$model.user.saveUser({username, password});
+            // 创建管理员用户（固定 id=1，重装时覆盖而非新增）
+            const exists = await db.table('user').where({id: 1}).count();
+            if(exists) {
+                await this.$model.user.saveUser({id: 1, username, password});
+            } else {
+                await this.$model.user.saveUser({username, password});
+            }
 
-            // 插入默认站点配置
+            // 插入默认站点配置（先检查是否已存在，避免重装时重复）
             const siteData = [
                 {group: 'basic', type: 'input', key: 'sitename', title: '站点名称', value: 'MeNote', tips: '', sort: 0},
                 {group: 'basic', type: 'textarea', key: 'description', title: '站点描述', value: '我的个人知识库', tips: '', sort: 1},
                 {group: 'display', type: 'input', key: 'list_rows', title: '列表条数', value: '20', tips: '', sort: 0},
             ];
             for(const item of siteData) {
-                await db.table('site').insert(item);
+                const exists = await db.table('site').where({key: item.key}).count();
+                if(!exists) {
+                    await db.table('site').insert(item);
+                }
             }
         });
     }
