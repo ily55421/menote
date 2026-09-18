@@ -14,6 +14,9 @@ const routes = [
     {url: '/admin', path: 'admin/index/index'},
     {url: '/admin/login', path: 'admin/login/index'},
 
+    // API 接口（RESTful）
+    {url: '/api/:controller/:action', path: '/auth/api', type: 'middleware'},
+
     // 安装向导
     {url: '/install', path: 'install/index/index'},
     {url: '/install/install', path: 'install/index/install'},

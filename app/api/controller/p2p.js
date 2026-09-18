@@ -14,19 +14,6 @@ const P2P = require('../../../lib/p2p');
 
 class P2p extends Base
 {
-    async _init() {
-        // P2P 管理仅限 admin 登录（cookie），不开放 token 权限
-        const userId = this.$cookie.get('user');
-        if(!userId) {
-            return this.$error('未登录');
-        }
-        const user = await this.$db.table('user').where({id: userId}).find();
-        if(!user) {
-            return this.$error('未登录');
-        }
-        this.userInfo = user;
-    }
-
     /** 状态总览（前端轮询此接口发现新配对请求） */
     async status() {
         const st = P2P.status();
