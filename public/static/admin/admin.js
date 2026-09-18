@@ -1519,6 +1519,21 @@ const NoteEditor = {
             ];
         };
 
+        // 同步上传关联的笔记 ID。
+        // Vditor 实例只创建一次、切 Tab 复用；且实例上没有 options 属性
+        //（选项存在内部 vditor.options），上传时 Vditor 读 vditor.options.upload.extraData，
+        // 故须写内部对象。笔记未就绪时删除该字段，让后端走默认值
+        const syncUploadNoteId = () => {
+            const upload = vditorInstance && vditorInstance.vditor && vditorInstance.vditor.options
+                && vditorInstance.vditor.options.upload;
+            if(!upload || !upload.extraData) return;
+            if(note.value && note.value.id) {
+                upload.extraData.note_id = String(note.value.id);
+            } else {
+                delete upload.extraData.note_id;
+            }
+        };
+
         const initVditor = () => {
             if(vditorInstance) {
                 vditorInstance.destroy();
@@ -1559,6 +1574,8 @@ const NoteEditor = {
                     if(note.value) {
                         vditorInstance.setValue(note.value.content || '');
                     }
+                    // 编辑器就绪后才存在 vditor.options，同步当前笔记 ID
+                    syncUploadNoteId();
                 },
                 input: () => {
                     if(note.value) {
@@ -1620,6 +1637,8 @@ const NoteEditor = {
             if(vditorInstance.getValue() !== latest) {
                 vditorInstance.setValue(latest);
             }
+            // 切到别的笔记后，上传要关联到新笔记
+            syncUploadNoteId();
         });
 
         const backlinks = computed(() => {
