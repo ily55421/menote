@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  menote:
+    image: yafoo/menote:latest
+    container_name: menote
+    restart: unless-stopped
+    ports:
+      - "3107:3107"
+    volumes:
+      - ./data:/menote/data
+      - ./upload:/menote/public/upload
+    environment:
+      - TZ=Asia/Shanghai
