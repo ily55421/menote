@@ -4,6 +4,9 @@ const { createApp, ref, reactive, computed, onMounted, onUnmounted, watch, nextT
 const { createRouter, createWebHashHistory } = VueRouter;
 
 // ==================== 统一请求封装 ====================
+/** 网络错误节流：同一时间窗口内只提示一次 */
+let lastNetworkErrorAt = 0;
+
 async function request(url, options = {}) {
     const defaultHeaders = { 'Content-Type': 'application/json' };
     const config = {
@@ -13,13 +16,35 @@ async function request(url, options = {}) {
     if(config.body && typeof config.body === 'object') {
         config.body = JSON.stringify(config.body);
     }
-    const res = await fetch(url, config);
-    const text = await res.text();
     try {
-        return JSON.parse(text);
+        const res = await fetch(url, config);
+        // 502 / 503 代理不可用：P2P 隧道断开时后端返回的码
+        if(res.status === 502 || res.status === 503) {
+            const now = Date.now();
+            if(now - lastNetworkErrorAt > 5000) {  // 5s 节流
+                lastNetworkErrorAt = now;
+                if(typeof ElMessage !== 'undefined') {
+                    ElMessage.warning('网络连接已断开，正在自动重连…');
+                }
+            }
+        }
+        const text = await res.text();
+        try {
+            return JSON.parse(text);
+        } catch(e) {
+            console.error('JSON parse error:', text.substring(0, 200));
+            return { state: 0, msg: '响应解析失败' };
+        }
     } catch(e) {
-        console.error('JSON parse error:', text.substring(0, 200));
-        return { state: 0, msg: '响应解析失败' };
+        // fetch 本身抛异常：网络完全不通/DNS 失败等
+        const now = Date.now();
+        if(now - lastNetworkErrorAt > 5000) {
+            lastNetworkErrorAt = now;
+            if(typeof ElMessage !== 'undefined') {
+                ElMessage.error('无法连接服务器，请检查网络');
+            }
+        }
+        return { state: 0, msg: '网络错误' };
     }
 }
 
