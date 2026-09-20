@@ -70,6 +70,8 @@ const store = reactive({
     notes: [],
     notesTotal: 0,
     notesLoading: false,
+    // 排序模式：'' = 自定义排序（分类内拖拽），'latest' = 按更新时间倒序（「最新」入口）
+    notesOrder: '',
     // 分页（后端 /api/note/list 已支持 page/rows）
     notesPage: 1,
     notesPageSize: 20,
@@ -235,6 +237,8 @@ const store = reactive({
             params.set('rows', this.notesPageSize);
             params.set('page', page);
             if(keyword) params.set('q', keyword);
+            // 「最新」入口：交给后端按 update_time 倒序（置顶仍优先）
+            if(this.notesOrder === 'latest') params.set('order', 'latest');
             const data = await request(`/api/note/list?${params}`);
             if(data.state === 1) {
                 this.notes = data.data.list || [];
@@ -579,6 +583,12 @@ const CategoryTree = {
                     <el-icon><Plus /></el-icon>
                 </el-button>
             </div>
+            <!-- 「最新」入口：跨分类按更新时间倒序（对齐参考图的侧栏首项） -->
+            <div class="tree-quick" :class="{ active: isLatestActive }" @click="selectLatest">
+                <el-icon class="quick-icon"><Clock /></el-icon>
+                <span class="quick-name">最新</span>
+                <span class="quick-badge" v-if="isLatestActive">{{ store.notesTotal }}</span>
+            </div>
             <el-tree
                 :data="categories"
                 :props="treeProps"
@@ -838,15 +848,37 @@ const CategoryTree = {
         });
 
         const handleNodeClick = (data) => {
-            if(data.is_virtual) {
-                // 点击"全部笔记"虚拟节点
-                store.currentCateId = null;
-            } else {
-                store.currentCateId = data.id;
-            }
+            const targetCateId = data.is_virtual ? null : data.id;
+            const cateChanged = store.currentCateId !== targetCateId;
+            const wasLatest = store.notesOrder === 'latest';
+            store.currentCateId = targetCateId;
+            // 选择分类即退出「最新」模式，回到分类内自定义排序
+            store.notesOrder = '';
             // 移动端：选择分类后收起抽屉
             if(store.isMobile) {
                 store.closeSidebar();
+            }
+            // 分类没变（如「最新」模式下点「全部笔记」）时 watcher 不会触发，
+            // 这里显式重载，避免列表仍是时间序而高亮已消失
+            if(!cateChanged && wasLatest) {
+                store.loadNotes(store.currentCateId, '', null, true);
+            }
+        };
+
+        // 「最新」入口：跨分类按更新时间倒序；再点一次退出该模式
+        const isLatestActive = computed(() => store.notesOrder === 'latest');
+        const selectLatest = () => {
+            const wasLatest = store.notesOrder === 'latest';
+            const cateChanged = store.currentCateId !== null;
+            store.notesOrder = wasLatest ? '' : 'latest';
+            // 「最新」是跨分类视图，进入时清空分类选择
+            if(!wasLatest) store.currentCateId = null;
+            if(store.isMobile) {
+                store.closeSidebar();
+            }
+            // currentCateId 变化时 watcher 已会重新加载，避免重复请求
+            if(wasLatest || !cateChanged) {
+                store.loadNotes(store.currentCateId, '', null, true);
             }
         };
 
@@ -1078,6 +1110,8 @@ const CategoryTree = {
             categories: computed(() => store.categories),
             treeProps,
             handleNodeClick,
+            isLatestActive,
+            selectLatest,
             allowDrag,
             allowDrop,
             handleDrop,
@@ -1147,7 +1181,6 @@ const NoteList = {
                     <div class="note-item-title">
                         <el-icon v-if="note.is_pinned" class="pin-icon"><Top /></el-icon>
                         <span class="note-item-name">{{ note.title || '无标题' }}</span>
-                        <span class="note-item-time">{{ formatTime(note.update_time || note.add_time) }}</span>
                         <span class="note-item-actions" @click.stop>
                             <el-button size="small" text class="note-delete-btn" @click="deleteNote(note)">
                                 <el-icon><Delete /></el-icon>
@@ -1165,6 +1198,18 @@ const NoteList = {
                                     </el-dropdown-menu>
                                 </template>
                             </el-dropdown>
+                        </span>
+                    </div>
+                    <!-- 摘要片段：无正文时退化为占位，保持卡片高度一致 -->
+                    <div class="note-item-excerpt" v-if="note.excerpt">{{ note.excerpt }}</div>
+                    <div class="note-item-excerpt empty" v-else>暂无内容</div>
+                    <!-- 元信息行：日期 + 附件大小/数量（参考有道云笔记卡片信息密度） -->
+                    <div class="note-item-meta">
+                        <span class="meta-date">{{ formatDate(note.update_time || note.add_time) }}</span>
+                        <span class="meta-dot" v-if="note.attach_count > 0">·</span>
+                        <span class="meta-size" v-if="note.attach_count > 0">{{ formatSize(note.attach_size) }}</span>
+                        <span class="meta-attach" v-if="note.attach_count > 0" :title="'附件 ' + note.attach_count + ' 个'">
+                            <el-icon><Paperclip /></el-icon>{{ note.attach_count }}
                         </span>
                     </div>
                 </div>
@@ -1224,6 +1269,9 @@ const NoteList = {
                 animation: 150,
                 handle: '.note-item',
                 filter: '.note-list-empty',
+                // 「最新」入口是跨分类的时间序，拖拽保存的 sort 与显示顺序无关，
+                // 还会按时间序 index 覆写各分类的自定义排序，因此禁用拖拽
+                disabled: store.notesOrder === 'latest',
                 onEnd: (evt) => {
                     if(evt.oldIndex === evt.newIndex) return;
 
@@ -1273,6 +1321,23 @@ const NoteList = {
                 return (d.getMonth() + 1) + '/' + d.getDate();
             }
             return d.getFullYear() + '/' + (d.getMonth() + 1) + '/' + d.getDate();
+        };
+
+        // 卡片元信息日期：始终显示完整年月日（参考图里的 2026.09.20 样式）
+        const formatDate = (timestamp) => {
+            if(!timestamp) return '';
+            const d = new Date(timestamp * 1000);
+            const p = (n) => n.toString().padStart(2, '0');
+            return d.getFullYear() + '.' + p(d.getMonth() + 1) + '.' + p(d.getDate());
+        };
+
+        // 附件大小：B/KB/MB 自适应（列表卡片展示用）
+        const formatSize = (bytes) => {
+            const size = Number(bytes) || 0;
+            if(size <= 0) return '';
+            if(size < 1024) return size + ' B';
+            if(size < 1024 * 1024) return (size / 1024).toFixed(1) + ' KB';
+            return (size / 1024 / 1024).toFixed(1) + ' MB';
         };
 
         const handleCommand = async (command, note) => {
@@ -1426,6 +1491,13 @@ const NoteList = {
             });
         });
 
+        // 「最新」模式禁用拖拽排序：切换时重建实例以应用 disabled 状态
+        watch(() => store.notesOrder, () => {
+            nextTick(() => {
+                initSortable();
+            });
+        });
+
         return {
             store,
             searchKeyword,
@@ -1434,6 +1506,8 @@ const NoteList = {
             goPage,
             onSearch,
             formatTime,
+            formatDate,
+            formatSize,
             handleCommand,
             deleteNote,
             createNote
@@ -1452,6 +1526,10 @@ const NoteEditor = {
                     placeholder="笔记标题"
                     @input="markModified"
                 />
+                <!-- 保存状态提示（对齐参考图标题栏右侧的"笔记将自动保存"位） -->
+                <span class="editor-status" :class="{ modified: isModified }">
+                    <span class="status-dot"></span>{{ isModified ? '有未保存修改' : '已保存' }}
+                </span>
                 <el-button
                     class="mobile-meta-toggle"
                     size="small"
@@ -1528,19 +1606,33 @@ const NoteEditor = {
         });
 
         // Vditor 工具栏：
-        // - PC 端不配置 = Vditor 官方默认全量工具栏
         // - 移动端基于默认清单排除低频/遮挡项：emoji、语音(record)、更多(more)、缩进(outdent/indent)
+        // - PC 端在默认清单基础上，把 outline（目录）提到最前面常驻：
+        //   官方默认把 outline 收在「更多」里，用户找不到；参考图是把它做成
+        //   工具栏首个按钮，点开左侧常驻目录树。
         const getToolbar = () => {
-            if(!store.isMobile) {
-                return undefined; // 默认工具栏
+            // 移动端不放 outline：Vditor 的 outline.toggle 硬编码 window.innerWidth >= 520
+            // 才显示面板，手机上点了也展不开，徒占工具栏空间
+            if(store.isMobile) {
+                return [
+                    'headings', 'bold', 'italic', 'strike', 'link', '|',
+                    'list', 'ordered-list', 'check', '|',
+                    'quote', 'line', 'code', 'inline-code', '|',
+                    'insert-before', 'insert-after', 'upload', 'table', '|',
+                    'undo', 'redo', '|',
+                    'fullscreen', 'edit-mode'
+                ];
             }
+            // PC：把 outline 置于首位，其余保持 Vditor 官方默认顺序
             return [
-                'headings', 'bold', 'italic', 'strike', 'link', '|',
-                'list', 'ordered-list', 'check', '|',
-                'quote', 'line', 'code', 'inline-code', '|',
-                'insert-before', 'insert-after', 'upload', 'table', '|',
+                'outline', '|',
+                'emoji', 'headings', 'bold', 'italic', 'strike', 'link', '|',
+                'list', 'ordered-list', 'check', 'outdent', 'indent', '|',
+                'quote', 'line', 'code', 'inline-code', 'insert-before', 'insert-after', '|',
+                'upload', 'record', 'table', '|',
                 'undo', 'redo', '|',
-                'fullscreen', 'edit-mode'
+                'fullscreen', 'edit-mode', 'both', 'code-theme', 'content-theme', '|',
+                'export', 'preview', 'devtools', 'info', 'help'
             ];
         };
 
@@ -1574,6 +1666,13 @@ const NoteEditor = {
                     pin: true
                 },
                 placeholder: '开始写作...',
+                // 目录（大纲）面板：桌面端默认展开在左侧，对齐参考图。
+                // 移动端不启用——Vditor 的 outline.toggle 硬编码 >=520px 才显示，
+                // 手机上即使点按钮也展不开
+                outline: {
+                    enable: !store.isMobile,
+                    position: 'left'
+                },
                 cache: { enable: false },
                 cdn: '/static/common/vditor',
                 lang: 'zh_CN',
@@ -1601,6 +1700,13 @@ const NoteEditor = {
                     }
                     // 编辑器就绪后才存在 vditor.options，同步当前笔记 ID
                     syncUploadNoteId();
+                    // 目录面板已渲染：补齐标题/收起按钮，绑定点击与滚动联动
+                    nextTick(() => {
+                        decorateOutline();
+                        bindOutlineClick();
+                        bindOutlineScroll();
+                        observeOutlineRender();
+                    });
                 },
                 input: () => {
                     if(note.value) {
@@ -1616,6 +1722,9 @@ const NoteEditor = {
                 store.markModified(note.value.id);
             }
         };
+
+        // 当前笔记是否有未保存修改（标题栏状态提示用）
+        const isModified = computed(() => Boolean(store.activeTab && store.activeTab.modified));
 
         // 注册「保存前强制同步」钩子：从 vditorInstance 拉最新内容写回 note.content。
         // input 事件在输入法组合中/防抖窗口内可能未触发，直接读 note.content 会保存旧值。
@@ -1666,6 +1775,165 @@ const NoteEditor = {
             syncUploadNoteId();
         });
 
+        // ---- 目录（大纲）面板：装饰 + 点击跳转 + 滚动联动高亮 ----
+        // Vditor 原生只给 hover 高亮，不反映"当前读到哪一节"，标题也固定叫"大纲"。
+        // 这里补齐三件事，对齐参考图（有道云「目录」树）：
+        //   1. 标题改为「目录」，右侧加收起按钮
+        //   2. 点击目录项平滑滚动到对应标题（Vditor 原生是瞬移）
+        //   3. 编辑器滚动时把当前章节标为高亮
+        // 注意：这些函数必须在 initVditor() 之前定义——after 回调里会立即引用。
+        let outlineScrollEl = null;
+        let outlineClickEl = null;
+
+        // 当前编辑模式的滚动容器：Vditor 同时挂载 wysiwyg/ir/sv/preview 四块，
+        // 只靠 display 切换，写死 .vditor-reset 会在切模式后拿到隐藏元素
+        const getOutlineReset = () => {
+            const mode = vditorInstance && vditorInstance.vditor ? vditorInstance.vditor.currentMode : 'wysiwyg';
+            if(mode === 'ir') return document.querySelector('#vditor .vditor-ir pre.vditor-reset');
+            if(mode === 'sv') return document.querySelector('#vditor .vditor-sv');
+            if(mode === 'preview') return document.querySelector('#vditor .vditor-preview .vditor-reset');
+            return document.querySelector('#vditor .vditor-wysiwyg pre.vditor-reset');
+        };
+
+        // 标题「大纲」→「目录」，并注入右侧收起按钮
+        const decorateOutline = () => {
+            const outline = document.querySelector('#vditor .vditor-outline');
+            if(!outline) return;
+            const title = outline.querySelector('.vditor-outline__title');
+            if(title && !title.dataset.decorated) {
+                title.dataset.decorated = '1';
+                // firstChild 是 i18n 文本节点（zh_CN 为「大纲」）；
+                // 加保护避免语言包/结构变化时抛错，阻断后续绑定
+                if(title.firstChild) title.firstChild.nodeValue = '目录';
+                const btn = document.createElement('span');
+                btn.className = 'outline-collapse-btn';
+                btn.title = '收起目录';
+                btn.innerHTML = '<svg viewBox="0 0 1024 1024" width="14" height="14" aria-hidden="true">'
+                    + '<path fill="currentColor" d="M128 192h512v64H128zM128 480h512v64H128zM128 768h512v64H128z"/>'
+                    + '<path fill="currentColor" d="M800 320v384l-96-96z" transform="rotate(180 752 512)"/>'
+                    + '</svg>';
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    // 收起目录：等价于点工具栏的目录按钮（Vditor 内部同步按钮态）
+                    const menuBtn = document.querySelector('#vditor .vditor-toolbar [data-type="outline"] > button')
+                        || document.querySelector('#vditor .vditor-toolbar [data-type="outline"]');
+                    if(menuBtn) menuBtn.dispatchEvent(new MouseEvent('click', {bubbles: true}));
+                });
+                title.appendChild(btn);
+            }
+        };
+
+        // 点击目录项：平滑滚动到对应标题
+        const bindOutlineClick = () => {
+            const outline = document.querySelector('#vditor .vditor-outline');
+            if(!outline || outline === outlineClickEl) return;
+            outlineClickEl = outline;
+            outline.addEventListener('click', (e) => {
+                // 折叠箭头由 Vditor 自己处理（它注册在 .vditor-outline__content 上）
+                if(e.target.closest('.vditor-outline__action')) return;
+                const span = e.target.closest('span[data-target-id]');
+                if(!span) return;
+                const heading = document.getElementById(span.getAttribute('data-target-id'));
+                const reset = getOutlineReset();
+                if(!heading || !reset) return;
+                e.preventDefault();
+                e.stopPropagation();
+                // 用视口坐标差换算目标 scrollTop：heading.offsetTop 相对的是
+                // offsetParent（vditor-wysiwyg），不一定等于滚动容器，用 rect 差最稳
+                const delta = heading.getBoundingClientRect().top - reset.getBoundingClientRect().top;
+                const target = Math.max(0, reset.scrollTop + delta - 8);
+                const before = reset.scrollTop;
+                reset.scrollTo({top: target, behavior: 'smooth'});
+                // 兜底：后台标签页会暂停平滑滚动动画，表现为点了没反应。
+                // 只在「完全没有动过」时才强制瞬移，避免打断正常的平滑动画
+                setTimeout(() => {
+                    if(reset.scrollTop === before && before !== target) {
+                        reset.scrollTop = target;
+                    }
+                }, 160);
+                // 立即高亮被点项，避免平滑滚动过程中高亮滞后
+                const spans = [...outline.querySelectorAll('li > span[data-target-id]')];
+                for(const s of spans) {
+                    s.classList.toggle('vditor-outline__item--current', s === span);
+                }
+            }, true);
+        };
+
+        // 滚动联动：取「顶部已滚过容器上沿」的最后一个标题作为当前章节
+        const syncOutlineCurrent = () => {
+            const outline = document.querySelector('#vditor .vditor-outline');
+            const reset = getOutlineReset();
+            if(!outline || !reset) return;
+
+            const spans = [...outline.querySelectorAll('li > span[data-target-id]')];
+            if(!spans.length) return;
+
+            // 标题 id 含中文，用 getElementById；判定统一用视口坐标
+            const threshold = reset.getBoundingClientRect().top + 8;
+            let current = spans[0];
+            for(const span of spans) {
+                const heading = document.getElementById(span.getAttribute('data-target-id'));
+                if(!heading) continue;
+                if(heading.getBoundingClientRect().top <= threshold) {
+                    current = span;
+                } else {
+                    break;
+                }
+            }
+            for(const span of spans) {
+                span.classList.toggle('vditor-outline__item--current', span === current);
+            }
+            // 高亮项滚入目录可视区（目录很长时保持可见）
+            current.scrollIntoView({block: 'nearest'});
+        };
+
+        // Vditor 每次 setValue/编辑都会重建大纲 UL（新 span 节点），
+        // 之前打上的 --current 会随之丢失。用 MutationObserver 在重建后补同步
+        let outlineObserver = null;
+        const observeOutlineRender = () => {
+            const content = document.querySelector('#vditor .vditor-outline__content');
+            if(!content || outlineObserver) return;
+            outlineObserver = new MutationObserver(() => {
+                clearTimeout(observeOutlineRender._timer);
+                observeOutlineRender._timer = setTimeout(syncOutlineCurrent, 60);
+            });
+            outlineObserver.observe(content, {childList: true, subtree: true});
+        };
+
+        // 滚动监听挂在整个 #vditor 上（捕获阶段）：
+        // 各编辑模式的滚动容器不同（wysiwyg→.vditor-wysiwyg pre、ir→.vditor-ir pre、
+        // sv→textarea、preview→.vditor-preview），写死某一个会导致切模式后联动失效。
+        // scroll 不冒泡，但捕获阶段能收到所有后代的滚动，切模式后无需重新绑定
+        const onOutlineScroll = () => syncOutlineCurrent();
+
+        const bindOutlineScroll = () => {
+            const root = document.querySelector('#vditor');
+            if(!root || root === outlineScrollEl) return;
+            if(outlineScrollEl) outlineScrollEl.removeEventListener('scroll', onOutlineScroll, true);
+            outlineScrollEl = root;
+            outlineScrollEl.addEventListener('scroll', onOutlineScroll, true);
+            syncOutlineCurrent();
+        };
+
+        onUnmounted(() => {
+            if(outlineScrollEl) outlineScrollEl.removeEventListener('scroll', onOutlineScroll, true);
+            outlineScrollEl = null;
+            outlineClickEl = null;
+            if(outlineObserver) {
+                outlineObserver.disconnect();
+                outlineObserver = null;
+            }
+            clearTimeout(observeOutlineRender._timer);
+            // 显式销毁 Vditor：它会在 window/document 上挂全局监听，
+            // 不销毁会保活旧实例，反复开关笔记造成泄漏
+            if(vditorInstance) {
+                vditorInstance.destroy();
+                vditorInstance = null;
+            }
+        });
+
+
         const backlinks = computed(() => {
             if(note.value && note.value.backlinks) {
                 return note.value.backlinks;
@@ -1681,9 +1949,10 @@ const NoteEditor = {
             store,
             note,
             flatCategories,
+            markModified,
+            isModified,
             backlinks,
             openBacklink,
-            markModified,
             metaExpanded
         };
     }

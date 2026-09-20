@@ -207,10 +207,13 @@ Get notes with pagination and filtering.
 - **Parameters**:
   - `token` (required)
   - `page`: Page number (default: 1)
-  - `rows`: Items per page (default: 20)
+  - `rows`: Items per page (default: 20, max: 100)
   - `cate_id`: Filter by category ID (optional, 0 = all)
   - `keyword`: Search keyword (optional, searches title and content)
+  - `q`: Search keyword (optional, searches title only)
+  - `order`: Sort order (optional). `latest` = by update_time desc (pinned still first); omit for custom sort (is_pinned desc, sort asc, add_time desc)
   - `is_pinned`: Filter pinned notes: 1=pinned only, 0=non-pinned only (optional)
+  - **Note**: list responses do NOT include `content` (only `excerpt`, max 110 chars). Use the detail API to fetch full content.
 - **Response**:
 ```json
 {
@@ -225,6 +228,9 @@ Get notes with pagination and filtering.
         "cate_name": "生活随笔",
         "keywords": "",
         "is_pinned": 0,
+        "excerpt": "First 110 chars of the note body with markdown syntax stripped…",
+        "attach_count": 2,
+        "attach_size": 682240,
         "add_time": 1726012800,
         "update_time": 1726012800
       }

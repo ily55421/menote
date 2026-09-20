@@ -3,16 +3,47 @@ const {Model} = require('jj.js');
 class Note extends Model {
     /**
      * 获取笔记列表
+     * order='latest' 时按更新时间倒序（置顶仍然优先），供「最新」入口使用
      */
-    async getNoteList(condition = {}, rows = 20, page = 1) {
-        return await this.db.table('note n')
+    async getNoteList(condition = {}, rows = 20, page = 1, order = '') {
+        let query = this.db.table('note n')
             .field('n.*, c.name as cate_name, c.is_public')
             .join('cate c', 'n.cate_id=c.id', 'left')
-            .where(condition)
-            .order('n.is_pinned', 'desc')
-            .order('n.sort', 'asc')
-            .order('n.add_time', 'desc')
-            .paginate({page, page_size: rows});
+            .where(condition);
+
+        query = query.order('n.is_pinned', 'desc');
+        if(order === 'latest') {
+            query = query.order('n.update_time', 'desc');
+        } else {
+            query = query.order('n.sort', 'asc').order('n.add_time', 'desc');
+        }
+
+        return await query.paginate({page, page_size: rows});
+    }
+
+    /**
+     * 批量取回笔记的附件数量与总大小（列表卡片用，一次分组查询）
+     * @param {number[]} noteIds
+     * @returns {Promise<Object>} { [note_id]: {count, size} }
+     */
+    async getAttachStats(noteIds = []) {
+        const ids = (noteIds || []).filter(id => id);
+        if(!ids.length) return {};
+
+        const rows = await this.db.table('attach')
+            .field('note_id, count(*) as cnt, sum(filesize) as total')
+            .where({'note_id': ['in', ids]})
+            .group('note_id')
+            .select();
+
+        const stats = {};
+        for(const row of rows) {
+            stats[row.note_id] = {
+                count: Number(row.cnt) || 0,
+                size: Number(row.total) || 0
+            };
+        }
+        return stats;
     }
     
     /**
