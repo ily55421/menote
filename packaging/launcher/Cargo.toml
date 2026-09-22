@@ -1,0 +1,29 @@
+[package]
+name = "menote-launcher"
+version = "1.0.0"
+edition = "2021"
+description = "MeNote 桌面发行版启动器（WebView2 壳 + Node 运行时托管）"
+
+[[bin]]
+name = "MeNote"
+path = "src/main.rs"
+
+[dependencies]
+# 窗口与 WebView2（Tauri 1.6 同期组合，互相配对、久经生产验证）
+tao = "0.24"
+wry = "0.39"
+# 读取附加在 exe 尾部的 payload.zip
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
+# Windows API：Job Object（子进程随启动器退出而终止）、错误弹窗
+# 0.52 的 HANDLE/HWND 为 isize，句柄判空用 == 0
+windows-sys = { version = "0.52", features = [
+    "Win32_System_JobObjects",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_Security",
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+] }
+[profile.release]
+strip = true
+lto = false
