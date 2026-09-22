@@ -41,7 +41,8 @@ use tao::{
 };
 
 include!(concat!(env!("OUT_DIR"), "/version.rs"));
-
+// 窗口图标像素（build.rs 从 assets/icon-256.png 解码生成，缺失时为 None）
+include!(concat!(env!("OUT_DIR"), "/window_icon.rs"));
 const PORT: u16 = 3107;
 const MAGIC: &[u8; 16] = b"MENOTE_PKG_v1\0\0\0";
 /// 尾部固定 footer：ver_len(u32) + zip_len(u64) + magic(16) = 28 字节
@@ -116,9 +117,18 @@ fn main() {
         }
     };
     window.set_title("MeNote");
+    // 窗口图标（标题栏左上角 + 任务栏）。exe 资源节的图标只影响文件显示，
+    // 运行中的窗口需显式设置，否则任务栏用的是默认图标。
+    apply_window_icon(&window);
     use tao::dpi::{LogicalSize, Size};
     window.set_inner_size(Size::Logical(LogicalSize::new(1280f64, 840f64)));
     window.set_min_inner_size(Some(Size::Logical(LogicalSize::new(960f64, 600f64))));
+    // WebView2 内存优化：wry 0.39 未暴露传 Chromium 命令行参数的 API，
+    // 改用 WebView2 官方支持的环境变量（必须在创建 WebView 之前设置，否则不生效）。
+    // 默认配置会常驻多进程 + 后台定时器 + 各类预加载，实测占 500MB+；
+    // 以下参数在保持功能完整的前提下削减常驻内存。
+    apply_webview2_memory_tuning();
+
     let webview = match wry::WebViewBuilder::new(&window)
         .with_html(loading_page("正在启动 MeNote…"))
         .build()
@@ -621,6 +631,58 @@ fn probe_once() -> bool {
 // ----------------------------------------------------------------------------
 // 杂项
 // ----------------------------------------------------------------------------
+
+/// 设置窗口图标（标题栏左上角 + 任务栏）。
+///
+/// exe 资源节里的图标只决定文件在资源管理器中的显示；
+/// 运行中的窗口若不显式设置，任务栏会退回系统默认图标。
+///
+/// 像素数据由 build.rs 从 assets/icon-256.png 解码后内嵌（见 window_icon.rs），
+/// 运行时无需解码 PNG，也不依赖 image crate。
+fn apply_window_icon(window: &Window) {
+    if let Some((rgba, w, h)) = WINDOW_ICON_RGBA {
+        match tao::window::Icon::from_rgba(rgba.to_vec(), w, h) {
+            Ok(icon) => window.set_window_icon(Some(icon)),
+            Err(e) => {
+                // 图标失败不影响使用，仅记录（无 dirs 上下文，直接 stderr）
+                eprintln!("[icon] 窗口图标设置失败: {e:?}");
+            }
+        }
+    }
+}
+
+/// 通过 WebView2 环境变量注入 Chromium 命令行参数，降低常驻内存。
+/// 为什么用环境变量：wry 0.39 的 Windows 扩展只暴露 `with_browser_accelerator_keys`，
+/// 没有传命令行参数的接口（更高版本才有 `with_additional_browser_args`）。
+///
+/// 必须在创建 WebView **之前** 调用，创建后再设置不会生效。
+///
+/// 各参数作用：
+///   renderer-process-limit=1  限制渲染进程数（默认按站点分进程，内存翻倍）
+///   disable-features=...      关闭翻译/媒体路由/模型下载等本应用用不到的后台服务
+///   disable-extensions        无扩展，省掉扩展宿主进程
+///   disable-component-update  不做组件热更新（本地应用无需）
+///   disable-sync / no-first-run / no-default-browser-check  关闭同步与首启检查
+///   js-flags=--lite-mode      V8 精简模式，降低 JS 堆与编译缓存占用
+fn apply_webview2_memory_tuning() {
+    let args = concat!(
+        "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,",
+        "CalculateNativeWinOcclusion,BackForwardCache,Translate,",
+        "MediaRouter,OptimizationGuideModelDownloading ",
+        "--disable-extensions ",
+        "--disable-component-update ",
+        "--disable-domain-reliability ",
+        "--disable-sync ",
+        "--no-first-run ",
+        "--no-default-browser-check ",
+        "--renderer-process-limit=1 ",
+        "--js-flags=--lite-mode"
+    );
+    // 仅在用户未自行设置时注入，避免覆盖高级用户的自定义配置
+    if std::env::var_os("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS").is_none() {
+        std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", args);
+    }
+}
 
 fn resolve_dirs() -> Result<Dirs, String> {
     let local_root = std::env::var("LOCALAPPDATA")

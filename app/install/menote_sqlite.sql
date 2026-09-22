@@ -16,6 +16,14 @@ CREATE TABLE IF NOT EXISTS `menote_note` (
 CREATE INDEX IF NOT EXISTS `idx_note_cate_id` ON `menote_note` (`cate_id`);
 CREATE INDEX IF NOT EXISTS `idx_note_add_time` ON `menote_note` (`add_time`);
 
+-- 列表排序复合索引：覆盖 getNoteList 的 ORDER BY is_pinned DESC, sort ASC, add_time DESC
+CREATE INDEX IF NOT EXISTS `idx_note_cate_sort` ON `menote_note` (`cate_id`, `is_pinned` DESC, `sort` ASC, `add_time` DESC);
+-- 「最新」入口跨分类排序，不能带 cate_id 前缀（前缀列会让索引失效）
+CREATE INDEX IF NOT EXISTS `idx_note_pinned_update` ON `menote_note` (`is_pinned` DESC, `update_time` DESC);
+-- 分类内按最新排序
+CREATE INDEX IF NOT EXISTS `idx_note_cate_pinned_update` ON `menote_note` (`cate_id`, `is_pinned` DESC, `update_time` DESC);
+CREATE INDEX IF NOT EXISTS `idx_note_update_time` ON `menote_note` (`update_time` DESC);
+
 -- 分类表（树形）
 CREATE TABLE IF NOT EXISTS `menote_cate` (
   `id` INTEGER PRIMARY KEY AUTOINCREMENT,

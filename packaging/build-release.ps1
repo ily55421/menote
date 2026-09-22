@@ -71,9 +71,15 @@ if(-not $SkipBuild) {
     Write-Step '编译 Rust 启动器（release）'
     Push-Location $LauncherDir
     try {
+        # 把版本号经环境变量传给 build.rs：exe 资源节的版本信息要跟实际发布版本一致。
+        # 否则 -Version 1.3.0 构建出的文件属性里仍显示 package.json 的版本（1.0.0）。
+        $env:MENOTE_BUILD_VERSION = $Version
         & cargo build --release
         if($LASTEXITCODE -ne 0) { throw "cargo build 失败（退出码 $LASTEXITCODE）" }
-    } finally { Pop-Location }
+    } finally {
+        Remove-Item Env:MENOTE_BUILD_VERSION -ErrorAction SilentlyContinue
+        Pop-Location
+    }
 } else {
     Write-Step '跳过编译，复用已有启动器'
 }

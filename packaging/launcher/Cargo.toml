@@ -24,6 +24,13 @@ windows-sys = { version = "0.52", features = [
     "Win32_Foundation",
     "Win32_UI_WindowsAndMessaging",
 ] }
+
+# 编译期资源嵌入：把 .ico 写进 exe 资源节（资源管理器/任务栏显示的文件图标）。
+# 仅构建时使用，不进最终产物。
+[build-dependencies]
+winres = "0.1"
+# 构建期把 PNG 解码成 RGBA 原始像素（运行时零解码开销、无需 image 依赖）
+image = { version = "0.24", default-features = false, features = ["png"] }
 [profile.release]
 strip = true
 lto = false

@@ -3156,7 +3156,36 @@ const GraphView = {
             }
         };
 
-        onMounted(refresh);
+        // vis-network 改为按需加载（605KB，仅本页需要）：
+        // 首屏不再下载解析，进入图谱页时才拉取，加载一次后缓存复用
+        const VIS_SRC = '/static/common/vis-network/vis-network.min.js';
+        const loadVisNetwork = () => new Promise((resolve, reject) => {
+            if(window.vis) return resolve();
+            const existing = document.querySelector('script[data-vis-network]');
+            if(existing) {
+                existing.addEventListener('load', () => resolve());
+                existing.addEventListener('error', () => reject(new Error('load failed')));
+                return;
+            }
+            const s = document.createElement('script');
+            s.src = VIS_SRC;
+            s.async = true;
+            s.dataset.visNetwork = '1';
+            s.onload = () => resolve();
+            s.onerror = () => reject(new Error('load failed'));
+            document.head.appendChild(s);
+        });
+
+        onMounted(async () => {
+            try {
+                await loadVisNetwork();
+            } catch(e) {
+                ElementPlus.ElMessage.error('知识图谱组件加载失败');
+                loading.value = false;
+                return;
+            }
+            refresh();
+        });
         onUnmounted(() => {
             if(network) network.destroy();
         });
