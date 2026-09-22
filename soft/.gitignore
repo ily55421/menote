@@ -1,0 +1,5 @@
+# 发行版二进制：不入库（97.9 MB，可由 packaging/build-release.ps1 重新构建）
+MeNote.exe
+
+# WebView2 用户数据缓存（运行时自动生成）
+*.WebView2/

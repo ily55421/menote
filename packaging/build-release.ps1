@@ -47,6 +47,7 @@ function Write-Step([string]$text) {
 $ExcludeTop = @(
     '.git', '.github', '.vscode',
     'android', 'docker', 'docs', 'fpk', 'packaging', 'Temp',
+    'soft',              # 发行版入口目录：内含 exe 自身，绝不能打包进去
     'node_modules',      # 单独处理（体积大，用 robocopy 复制）
     'data',              # 用户数据：绝不打包
     'start.ps1', 'start.bat', 'docker-compose.yml', 'pelican-bike.html'
@@ -170,15 +171,41 @@ $outSize = (Get-Item $OutExe).Length
 $expected = $bareBytes.Length + $zipBytes.Length + $verBytes.Length + 4 + 8 + 16
 if($outSize -ne $expected) { throw "产物大小异常：$outSize != $expected" }
 
+# ---- 5) 发布到使用入口目录 soft/ ----
+# soft/ 是日常使用的正式入口，构建后自动同步过去（覆盖旧版即完成升级）
+$SoftDir = Join-Path $ProjectRoot 'soft'
+$SoftExe = Join-Path $SoftDir 'MeNote.exe'
+$published = $false
+if(Test-Path $SoftDir) {
+    Write-Step '发布到使用入口 soft\'
+    try {
+        $probe = [System.IO.File]::Open($SoftExe, 'Open', 'ReadWrite', 'None')
+        $probe.Dispose()
+    } catch {
+        Write-Host '    跳过：soft\MeNote.exe 正被占用（请先退出运行中的 MeNote）' -ForegroundColor Yellow
+        $published = $null
+    }
+    if($published -ne $null) {
+        Copy-Item $OutExe $SoftExe -Force
+        $published = $true
+        Write-Host ("    已更新: {0}" -f $SoftExe)
+    }
+} else {
+    $published = $null
+}
+
 Write-Host ''
 Write-Host '构建完成' -ForegroundColor Green
 Write-Host ("    产物: {0}" -f $OutExe)
 Write-Host ("    版本: {0}" -f $Version)
 Write-Host ("    大小: {0:N1} MB" -f ($outSize / 1MB))
+if($published -eq $true) { Write-Host ("    使用入口: {0}（已同步）" -f $SoftExe) }
+elseif($published -eq $null) { Write-Host '    使用入口: soft\ 未同步（见上方提示）' -ForegroundColor Yellow }
 Write-Host ''
 Write-Host '运行说明：' -ForegroundColor Yellow
-Write-Host '  - 双击 MeNote.exe 即可（首次会释放运行环境，约 10~60 秒）'
+Write-Host '  - 日常使用: 双击 soft\MeNote.exe'
+Write-Host '  - 首次/更新后启动约 6~10 秒释放运行环境，之后秒开'
 Write-Host '  - 用户数据: %APPDATA%\MeNote\data（更新版本不会丢失）'
 Write-Host '  - 程序文件: %LOCALAPPDATA%\MeNote\runtime'
 Write-Host '  - 日志:     %LOCALAPPDATA%\MeNote\{launcher,server}.log'
-Write-Host '  - 版本更新: 直接用新版 MeNote.exe 覆盖旧文件，重启即自动升级'
+Write-Host '  - 版本更新: 退出 MeNote 后重新构建，或手动覆盖 soft\MeNote.exe'
