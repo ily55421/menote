@@ -13,7 +13,7 @@
     <link rel="stylesheet" href="/static/common/vditor/dist/index.css">
     
     <!-- 自定义样式 -->
-    <link rel="stylesheet" href="/static/admin/admin.css?v=20260922a">
+    <link rel="stylesheet" href="/static/admin/admin.css?v={{asset_ver}}">
 </head>
 <body>
     <div id="app"></div>
@@ -40,7 +40,7 @@
     <!-- Vditor -->
     <script src="/static/common/vditor/dist/index.min.js"></script>
     
-    <!-- 应用主文件（v=版本号，改版后强制刷新缓存） -->
-    <script src="/static/admin/admin.js?v=20260922a"></script>
+    <!-- 应用主文件（v=版本号：取自 package.json，发版即自动失效缓存） -->
+    <script src="/static/admin/admin.js?v={{asset_ver}}"></script>
 </body>
 </html>

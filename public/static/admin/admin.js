@@ -79,8 +79,10 @@ const store = reactive({
     // 笔记数据缓存
     notesCache: {},
 
-    // 移动端：笔记列表是否隐藏
-    noteListHidden: false,
+    // 侧栏折叠：分类栏 / 笔记列表默认折叠成窄条（只显示单字 + 添加图标）
+    // 仅在桌面端生效；移动端由 Workspace 的 computed 强制展开
+    cateCollapsed: true,
+    noteListCollapsed: true,
 
     // 移动端状态：是否手机、当前单栏视图（list=笔记列表 / editor=编辑器）、分类抽屉
     isMobile: false,
@@ -576,12 +578,39 @@ const api = {
 // 分类树组件
 const CategoryTree = {
     template: `
-        <div class="category-tree">
+        <div class="category-tree" :class="{ 'is-collapsed': isCollapsed }">
+            <!-- 折叠态：窄条，只显示「类」字 + 新建分类 + 展开按钮 -->
+            <template v-if="isCollapsed">
+                <div class="rail">
+                    <el-button text class="rail-btn rail-add" title="新建分类" @click="openAddDialog">
+                        <el-icon><Plus /></el-icon>
+                    </el-button>
+                    <div class="rail-label" title="分类（点击展开）" @click="expand">
+                        <span class="rail-char">类</span>
+                    </div>
+                    <el-button text class="rail-btn rail-expand" title="展开分类栏" @click="expand">
+                        <el-icon><DArrowRight /></el-icon>
+                    </el-button>
+                    <!-- 底部导航（设置/Token/图谱/P2P/退出）在折叠态整体隐藏，
+                         这里保留个人中心入口，避免必须展开才能触达后台页面 -->
+                    <el-button text class="rail-btn rail-user" title="个人中心" @click="store.navigateFromSidebar('/admin/profile')">
+                        <el-icon><User /></el-icon>
+                    </el-button>
+                </div>
+            </template>
+
+            <!-- 展开态：完整分类树 -->
+            <template v-else>
             <div class="tree-header">
                 <span class="tree-title">分类</span>
-                <el-button size="small" text class="tree-add-btn" @click="showAddDialog">
-                    <el-icon><Plus /></el-icon>
-                </el-button>
+                <div class="tree-header-actions">
+                    <el-button size="small" text class="tree-add-btn" @click="openAddDialog" title="新建分类">
+                        <el-icon><Plus /></el-icon>
+                    </el-button>
+                    <el-button size="small" text class="tree-collapse-btn" @click="collapse" title="收起分类栏">
+                        <el-icon><DArrowLeft /></el-icon>
+                    </el-button>
+                </div>
             </div>
             <!-- 「最新」入口：跨分类按更新时间倒序（对齐参考图的侧栏首项） -->
             <div class="tree-quick" :class="{ active: isLatestActive }" @click="selectLatest">
@@ -590,6 +619,7 @@ const CategoryTree = {
                 <span class="quick-badge" v-if="isLatestActive">{{ store.notesTotal }}</span>
             </div>
             <el-tree
+                ref="treeRef"
                 :data="categories"
                 :props="treeProps"
                 node-key="id"
@@ -629,7 +659,7 @@ const CategoryTree = {
                     </div>
                 </template>
             </el-tree>
-
+            </template>
             <!-- 添加/编辑分类对话框（点遮罩不关：表单防误触 + 防 emoji 弹窗变孤儿） -->
             <el-dialog v-model="dialogVisible" :title="dialogTitle" width="400px" append-to-body :close-on-click-modal="false">
                 <el-form :model="cateForm" label-width="80px">
@@ -733,6 +763,8 @@ const CategoryTree = {
     `,
     setup() {
         const dialogVisible = ref(false);
+        const treeRef = ref(null);
+
         const dialogTitle = ref('添加分类');
 
         // emoji 分组数据：常用组保留原有 30 个；其余按语义分组，覆盖日常分类场景
@@ -1105,8 +1137,36 @@ const CategoryTree = {
             }
         };
 
+        // ==================== 侧栏折叠（桌面端） ====================
+        // 折叠态：整栏收成窄条，只显示「类」字 + 新建分类图标 + 展开按钮
+        // 移动端：抽屉本身就是完整宽度，不套用折叠态
+        const isCollapsed = computed(() => !store.isMobile && store.cateCollapsed);
+
+        // 展开后恢复当前分类高亮：折叠时 v-if 卸载了整棵树，el-tree 内部的
+        // currentNode 会归零，而 store.currentCateId 未变 —— 不补这一步，
+        // 展开后侧栏没有任何节点高亮，与右侧笔记列表内容对不上。
+        const restoreCurrentKey = () => {
+            nextTick(() => {
+                // 虚拟「全部笔记」节点 id 为 null，el-tree 用 null 匹配不到，需单独处理
+                treeRef.value && treeRef.value.setCurrentKey(store.currentCateId);
+            });
+        };
+
+        const expand = () => {
+            store.cateCollapsed = false;
+            restoreCurrentKey();
+        };
+        const collapse = () => { store.cateCollapsed = true; };
+
+        // 窄条上的 + 与展开态的 + 共用同一个新建对话框
+        const openAddDialog = () => {
+            showAddDialog();
+        };
+
+
         return {
             store,
+            treeRef,
             categories: computed(() => store.categories),
             treeProps,
             handleNodeClick,
@@ -1131,7 +1191,11 @@ const CategoryTree = {
             saveCate,
             createNote,
             createNoteInCate,
-            logout
+            logout,
+            isCollapsed,
+            expand,
+            collapse,
+            openAddDialog
         };
     }
 };
@@ -1139,7 +1203,25 @@ const CategoryTree = {
 // 笔记列表组件
 const NoteList = {
     template: `
-        <div class="note-list">
+        <div class="note-list" :class="{ 'is-collapsed': isCollapsed }">
+            <!-- 折叠态：窄条，只显示「笔」字 + 新建笔记 + 展开按钮 -->
+            <template v-if="isCollapsed">
+                <div class="rail">
+                    <el-button text class="rail-btn rail-add" title="新建笔记" @click="createNote">
+                        <el-icon><Plus /></el-icon>
+                    </el-button>
+                    <div class="rail-label" title="笔记列表（点击展开）" @click="expand">
+                        <span class="rail-char">笔</span>
+                        <span class="rail-badge" v-if="store.notesTotal > 0">{{ store.notesTotal }}</span>
+                    </div>
+                    <el-button text class="rail-btn rail-expand" title="展开笔记列表" @click="expand">
+                        <el-icon><DArrowRight /></el-icon>
+                    </el-button>
+                </div>
+            </template>
+
+            <!-- 展开态：完整笔记列表 -->
+            <template v-else>
             <div class="note-list-header">
                 <div class="note-list-title-wrap">
                     <span class="note-list-title">{{ store.currentCateName }}</span>
@@ -1149,7 +1231,7 @@ const NoteList = {
                     <el-button size="small" text @click="createNote" title="新建笔记">
                         <el-icon><Plus /></el-icon>
                     </el-button>
-                    <el-button size="small" text class="toggle-note-list-btn" @click="store.noteListHidden = !store.noteListHidden" title="收起笔记列表">
+                    <el-button size="small" text class="toggle-note-list-btn" @click="collapse" title="收起笔记列表">
                         <el-icon><DArrowLeft /></el-icon>
                     </el-button>
                 </div>
@@ -1227,6 +1309,7 @@ const NoteList = {
                     @current-change="goPage"
                 />
             </div>
+            </template>
         </div>
     `,
     setup() {
@@ -1249,7 +1332,15 @@ const NoteList = {
         };
 
         const initSortable = () => {
-            if(!noteListBody.value) return;
+            // 列表容器不存在（侧栏折叠态：.note-list-body 被 v-if 卸载）：
+            // 先销毁旧实例再退出，避免实例与已卸载 DOM 一起被长期引用
+            if(!noteListBody.value) {
+                if(sortableInstance) {
+                    sortableInstance.destroy();
+                    sortableInstance = null;
+                }
+                return;
+            }
 
             // 移动端禁用拖拽排序（避免滚动列表时误触）
             if(store.isMobile) {
@@ -1498,6 +1589,21 @@ const NoteList = {
             });
         });
 
+        // ==================== 侧栏折叠（桌面端） ====================
+        // 折叠态：整栏收成窄条，只显示「笔」字 + 新建笔记图标 + 展开按钮
+        // 移动端：单栏列表视图本身就占满宽度，不套用折叠态
+        const isCollapsed = computed(() => !store.isMobile && store.noteListCollapsed);
+
+        const expand = () => { store.noteListCollapsed = false; };
+        const collapse = () => { store.noteListCollapsed = true; };
+
+        // 展开/收起会整体重建 DOM（v-if 切换），拖拽实例必须重建
+        watch(isCollapsed, () => {
+            nextTick(() => {
+                initSortable();
+            });
+        });
+
         return {
             store,
             searchKeyword,
@@ -1510,7 +1616,10 @@ const NoteList = {
             formatSize,
             handleCommand,
             deleteNote,
-            createNote
+            createNote,
+            isCollapsed,
+            expand,
+            collapse
         };
     }
 };
@@ -1674,6 +1783,13 @@ const NoteEditor = {
                     position: 'left'
                 },
                 cache: { enable: false },
+                // 正文宽度：Vditor 默认 preview.maxWidth=800，会按
+                // padding = (容器宽 - 800) / 2 给正文左右补白做居中排版，
+                // 宽屏下两侧会空出几百像素。设为超大值让该公式算出的补白
+                // 恒小于 35px 基准，正文即铺满容器（仅保留 Vditor 默认 35px 边距）。
+                preview: {
+                    maxWidth: 999999
+                },
                 cdn: '/static/common/vditor',
                 lang: 'zh_CN',
                 upload: {
@@ -1988,10 +2104,10 @@ const Workspace = {
             <div class="sidebar-overlay" v-if="store.mobileSidebarOpen" @click="store.closeSidebar()"></div>
 
             <el-container>
-                <el-aside width="220px" class="workspace-aside" :class="{ 'sidebar-visible': store.mobileSidebarOpen, 'no-anim': store.sidebarNoAnim }">
+                <el-aside :width="cateAsideWidth" class="workspace-aside" :class="{ 'sidebar-visible': store.mobileSidebarOpen, 'no-anim': store.sidebarNoAnim, 'is-collapsed': cateCollapsedUi }">
                     <CategoryTree />
                 </el-aside>
-                <el-aside width="280px" class="note-list-aside" :class="{ 'note-list-hidden': store.noteListHidden, 'mobile-list-view': store.isMobile && store.mobileView === 'list', 'mobile-editor-behind': store.isMobile && store.mobileView === 'editor' }">
+                <el-aside :width="noteListAsideWidth" class="note-list-aside" :class="{ 'is-collapsed': noteListCollapsedUi, 'mobile-list-view': store.isMobile && store.mobileView === 'list', 'mobile-editor-behind': store.isMobile && store.mobileView === 'editor' }">
                     <NoteList />
                 </el-aside>
                 <el-container class="workspace-main" :class="{ 'mobile-editor-view': store.isMobile && store.mobileView === 'editor' }">
@@ -2085,6 +2201,16 @@ const Workspace = {
     `,
     setup() {
         const Check = ElementPlusIconsVue.Check;
+        // ==================== 侧栏折叠宽度 ====================
+        // 折叠态由 store 控制，移动端一律走完整宽度（抽屉/单栏视图）
+        const cateCollapsedUi = computed(() => !store.isMobile && store.cateCollapsed);
+        const noteListCollapsedUi = computed(() => !store.isMobile && store.noteListCollapsed);
+
+        const CATE_RAIL = 56;       // 折叠窄条宽度
+        const NOTE_RAIL = 56;
+        const cateAsideWidth = computed(() => (cateCollapsedUi.value ? CATE_RAIL + 'px' : '220px'));
+        const noteListAsideWidth = computed(() => (noteListCollapsedUi.value ? NOTE_RAIL + 'px' : '280px'));
+
 
         const createNote = async () => {
             // 不再检查分类，直接创建笔记
@@ -2193,7 +2319,11 @@ const Workspace = {
             createNote,
             handleTabRemove,
             saveNote,
-            deleteNote
+            deleteNote,
+            cateCollapsedUi,
+            noteListCollapsedUi,
+            cateAsideWidth,
+            noteListAsideWidth
         };
     }
 };

@@ -279,6 +279,99 @@ html, body {
     flex-shrink: 0;
 }
 
+/* ==================== 侧栏折叠窄条（桌面端） ==================== */
+/* 折叠态整栏只占 56px：竖排显示单字（类 / 笔）+ 添加图标 + 展开箭头。
+   移动端由 .workspace-aside / .note-list-aside 的媒体查询覆盖为抽屉宽度，
+   is-collapsed 类不会在移动端挂上（见各组件的 isCollapsed computed）。 */
+
+/* 折叠态隐藏底部工具栏：用户信息与 5 个入口按钮放不进 56px 窄条，
+   需要时点「类」字展开即可（保持窄条只有添加图标 + 单字） */
+.category-tree.is-collapsed .tree-footer {
+    display: none;
+}
+
+
+.rail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 100%;
+    padding: 8px 0;
+    gap: 6px;
+}
+
+.rail-btn {
+    width: 36px !important;
+    height: 36px !important;
+    padding: 0 !important;
+    color: #909399;
+    flex-shrink: 0;
+}
+
+.rail-btn:hover {
+    color: #409eff;
+    background: #f0f2f5;
+}
+
+.rail-btn .el-icon {
+    font-size: 17px;
+}
+
+/* 单字标签：占据窄条中部，点击即展开 */
+.rail-label {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    cursor: pointer;
+    user-select: none;
+}
+
+.rail-char {
+    font-size: 15px;
+    font-weight: 600;
+    color: #606266;
+    writing-mode: vertical-rl;    /* 单字竖排，视觉上贴齐窄条中线 */
+    letter-spacing: 2px;
+    transition: color 0.15s;
+}
+
+.rail-label:hover .rail-char {
+    color: #409eff;
+}
+
+.rail-badge {
+    font-size: 10px;
+    color: #909399;
+    background: #f0f2f5;
+    padding: 1px 5px;
+    border-radius: 8px;
+    line-height: 14px;
+}
+
+.rail-expand {
+    margin-top: auto;
+}
+
+/* 展开态的「收起」按钮 */
+.tree-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.tree-collapse-btn {
+    padding: 2px !important;
+    color: #909399;
+}
+
+.tree-collapse-btn:hover {
+    color: #409eff;
+}
+
 /* ==================== 笔记列表 ==================== */
 .note-list {
     display: flex;
@@ -321,8 +414,8 @@ html, body {
     min-width: 0;
 }
 
+/* 「收起笔记列表」：移动端随 .note-list-header 一起隐藏（见文件末尾媒体查询） */
 .toggle-note-list-btn {
-    display: none;
     padding: 2px !important;
     color: #909399;
 }
@@ -939,13 +1032,38 @@ html, body {
     padding: 4px 8px !important;
 }
 
-/* 让编辑区域占满整个宽度 */
-.vditor-ir__editor,
-.vditor-wysiwyg__editor,
-.vditor-sv {
-    width: 100% !important;
+/* 让编辑区域占满整个宽度。
+   注意 Vditor 会在初始化/切换模式/切全屏/窗口 resize 时给正文元素
+   **内联**写入 padding: 10px Npx，其中
+       N = (正文父容器 clientWidth - preview.maxWidth) / 2
+   （preview.maxWidth 默认 800）。
+   全屏时 .vditor 变成 position:fixed; width:100vw，父容器 clientWidth
+   等于整个屏幕宽，N 可达数百像素 —— 表现为正文两侧大片空白。
+   内联样式优先级高于普通规则，必须用 !important 覆盖，
+   统一回落到 Vditor 在窄屏时的基准边距 35px。 */
+#vditor .vditor-wysiwyg pre.vditor-reset,
+#vditor .vditor-ir pre.vditor-reset,
+#vditor .vditor-sv,
+#vditor .vditor-preview > .vditor-reset,
+/* 全屏模式：Vditor 给 .vditor 加 .vditor--fullscreen，容器变为整屏，
+   上面的选择器同样命中，这里显式列出以便全屏时也走同一套边距 */
+.vditor--fullscreen .vditor-wysiwyg pre.vditor-reset,
+.vditor--fullscreen .vditor-ir pre.vditor-reset,
+.vditor--fullscreen .vditor-sv,
+.vditor--fullscreen .vditor-preview > .vditor-reset {
+    padding: 10px 35px !important;
     max-width: 100% !important;
     box-sizing: border-box !important;
+}
+
+/* 手机端：屏幕本就窄，保持 Vditor 的小边距（10px），避免正文被边距挤压 */
+@media (max-width: 768px) {
+    #vditor .vditor-wysiwyg pre.vditor-reset,
+    #vditor .vditor-ir pre.vditor-reset,
+    #vditor .vditor-sv,
+    #vditor .vditor-preview > .vditor-reset {
+        padding: 10px !important;
+    }
 }
 
 /* ==================== 图标选择器 ==================== */
@@ -1145,6 +1263,11 @@ html, body {
 @media (max-width: 1024px) {
     .note-list-aside {
         width: 240px !important;
+    }
+
+    /* 折叠窄条优先：平板宽度下也不放宽（!important 覆盖上面的 240px） */
+    .note-list-aside.is-collapsed {
+        width: 56px !important;
     }
 }
 
@@ -1771,6 +1894,18 @@ html, body {
         transform: translateX(-100%);
         transition: transform 0.25s ease;
         box-shadow: none;
+    }
+
+    /* 防御：手机端一律走抽屉/单栏全宽，折叠窄条样式不生效。
+       正常链路 is-collapsed 不会挂上（见组件里的 isCollapsed computed），
+       这里兜底——窗口从桌面缩到手机时状态残留也不会把侧栏压成 56px。
+       注意两条规则各自对应本区块上方已定义的 78vw / 100% 宽度。 */
+    .workspace-aside.is-collapsed {
+        width: 78vw !important;
+    }
+
+    .note-list-aside.is-collapsed {
+        width: 100% !important;
     }
 
     .workspace-aside.sidebar-visible {
